@@ -177,29 +177,30 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
                 save_debug_images(config, input, meta, target, pred*4, output,
                                   prefix)
 
-        name_values, perf_indicator = val_dataset.evaluate(
-            config, all_preds, output_dir, all_boxes, image_path,
-            filenames, imgnums)
+       # name_values, perf_indicator = val_dataset.evaluate(
+       #     config, all_preds, output_dir, all_boxes, image_path,
+       #     filenames, imgnums)
 
         _, full_arch_name = get_model_name(config)
-        if isinstance(name_values, list):
-            for name_value in name_values:
-                _print_name_value(name_value, full_arch_name)
-        else:
-            _print_name_value(name_values, full_arch_name)
+        #if isinstance(name_values, list):
+        #    for name_value in name_values:
+        #        _print_name_value(name_value, full_arch_name)
+        #else:
+        #    _print_name_value(name_values, full_arch_name)
 
         if writer_dict:
             writer = writer_dict['writer']
             global_steps = writer_dict['valid_global_steps']
             writer.add_scalar('valid_loss', losses.avg, global_steps)
             writer.add_scalar('valid_acc', acc.avg, global_steps)
-            if isinstance(name_values, list):
-                for name_value in name_values:
-                    writer.add_scalars('valid', dict(name_value), global_steps)
-            else:
-                writer.add_scalars('valid', dict(name_values), global_steps)
+            #if isinstance(name_values, list):
+            #    for name_value in name_values:
+            #        writer.add_scalars('valid', dict(name_value), global_steps)
+            #else:
+            #    writer.add_scalars('valid', dict(name_values), global_steps)
             writer_dict['valid_global_steps'] = global_steps + 1
-
+    perf_indicator = acc.avg
+    
     return perf_indicator
 
 

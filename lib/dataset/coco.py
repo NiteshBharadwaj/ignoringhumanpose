@@ -20,7 +20,8 @@ from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 
 from dataset.JointsDataset import JointsDataset
-from nms.nms import oks_nms
+from dataset.oks_nms.oks_nms import OKS_NMS as oks_nms
+#from nms.nms import oks_nms
 
 
 logger = logging.getLogger(__name__)
