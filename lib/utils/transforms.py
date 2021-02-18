@@ -11,6 +11,67 @@ from __future__ import print_function
 import numpy as np
 import cv2
 
+class ImageTransform(object):
+
+    def __init__(self, part):
+        self.part = part
+        
+        
+def circle_cutout(image, x_center, y_center, radius, color):
+    h, w = image.shape[:-1]
+    #print('image shape', image.shape)
+    if x_center >= 0 and x_center < image.shape[1] and y_center >= 0 and y_center < image.shape[0]: #switch 1 and 0
+        x_center = max(x_center, 0)
+        y_center = max(y_center, 0)
+        x, y = np.ogrid[-y_center:h - y_center, -x_center:w - x_center]
+        mask = x * x + y * y <= radius * radius
+        #print('mask', mask)
+
+        image[mask] = color
+    return image
+
+
+def sq_cutout(image, x_center, y_center, side, color):
+    #print(image.shape[:2])
+    h, w = image.shape[:2] # changing from [:-1] to [:2]
+    #print('image shape', image.shape)
+    if x_center >= 0 and x_center < image.shape[1] and y_center >= 0 and y_center < image.shape[0]: #switch 1 and 0
+        x_center = max(x_center, 0)
+        y_center = max(y_center, 0)
+        x, y = np.ogrid[-y_center:h - y_center, -x_center:w - x_center]
+        #mask = x * x + y * y <= radius * radius
+        mask = abs(x + y) + abs(x - y) <= side
+        #print('mask', mask)
+        image[mask] = color
+    return image, x_center, y_center
+
+
+def cutout_img_custom(img, x, y, mean_coloring, dataset, width = 100):
+    color = [0, 0, 0]
+    if mean_coloring:
+        color = get_image_mean_color(img)
+
+    if x != None and y != None:
+        img, x_center, y_center = sq_cutout(img, x, y, width, color)
+        return img, (x, y), (width, width), x_center, y_center
+    else:
+        return img, (0, 0), (0, 0), None, None
+    
+    
+class CutoutCustom(ImageTransform):
+
+    def __init__(self, dataset, mean_coloring=False, width=40):
+        #super().__init__(part)
+        self.mean_coloring = mean_coloring
+        self.dataset = dataset
+        self.width = width
+
+    def __call__(self, image, x_c, y_c):
+        img = image
+        x, y = x_c, y_c
+        img, center_pos, widths, x_center, y_center = cutout_img_custom(img, x, y, mean_coloring=self.mean_coloring, dataset = self.dataset, width=self.width)
+        return img
+
 
 def flip_back(output_flipped, matched_parts):
     '''
