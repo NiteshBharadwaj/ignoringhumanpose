@@ -14,16 +14,17 @@ import random
 
 import cv2
 import numpy as np
+import csv
 import torch
 from torch.utils.data import Dataset
 
 from utils.transforms import get_affine_transform
 from utils.transforms import affine_transform
 from utils.transforms import fliplr_joints
+from utils.transforms import ImageTransform, circle_cutout, sq_cutout, cutout_img_custom, CutoutCustom
 
 
 logger = logging.getLogger(__name__)
-
 
 class JointsDataset(Dataset):
     def __init__(self, cfg, root, image_set, is_train, transform=None):
@@ -31,6 +32,7 @@ class JointsDataset(Dataset):
         self.pixel_std = 200
         self.flip_pairs = []
         self.parent_ids = []
+        self.cutout_dir = 'augment_train2017.csv'
 
         self.is_train = is_train
         self.root = root
@@ -78,6 +80,16 @@ class JointsDataset(Dataset):
         if data_numpy is None:
             logger.error('=> fail to read {}'.format(image_file))
             raise ValueError('Fail to read {}'.format(image_file))
+            
+        cutout=True    
+        if cutout:
+            #print('image_file', image_file)
+            #print('whats going on', str(image_file)[27:])
+            x_center, y_center = self.cutout_xy((str(image_file))[27:], self.cutout_dir)
+            #print(x_center)
+            data_numpy = CutoutCustom('coco').__call__(data_numpy, x_center, y_center)
+            #print('cutout applied')
+            del x_center, y_center
 
         joints = db_rec['joints_3d']
         joints_vis = db_rec['joints_3d_vis']
@@ -165,6 +177,21 @@ class JointsDataset(Dataset):
         logger.info('=> num db: {}'.format(len(db)))
         logger.info('=> num selected db: {}'.format(len(db_selected)))
         return db_selected
+    
+    def cutout_xy(self, filename, cutout_dir):
+        f = open(cutout_dir, 'rt')
+        reader = csv.reader(f)
+        for row in reader:
+            if filename in row:
+                if row[-2]!='' or row[-1]!='':
+                    x_c = int(row[-2])
+                    y_c = int(row[-1])
+                else:
+                    x_c = None
+                    y_c = None
+            else:
+                y_c, x_c = None, None
+        return x_c, y_c # does this change for cv2?
 
     def generate_target(self, joints, joints_vis):
         '''
