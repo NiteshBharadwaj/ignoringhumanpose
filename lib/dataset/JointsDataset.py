@@ -33,6 +33,7 @@ class JointsDataset(Dataset):
         self.flip_pairs = []
         self.parent_ids = []
         self.cutout_dir = 'augment_train2017.csv'
+        self.cutout_dir_val = 'augment_val2017.csv'
 
         self.is_train = is_train
         self.root = root
@@ -82,14 +83,21 @@ class JointsDataset(Dataset):
             raise ValueError('Fail to read {}'.format(image_file))
             
         cutout=True    
-        if cutout:
+        if cutout and self.is_train:
             #print('image_file', image_file)
             #print('whats going on', str(image_file)[27:])
             x_center, y_center = self.cutout_xy((str(image_file))[27:], self.cutout_dir)
             #print(x_center)
             data_numpy = CutoutCustom('coco').__call__(data_numpy, x_center, y_center)
             #print('cutout applied')
-            del x_center, y_center
+            
+        if cutout and not self.is_train:
+            #print('image_file', image_file)
+            #print('whats going on', str(image_file)[27:])
+            x_center, y_center = self.cutout_xy((str(image_file))[27:], self.cutout_dir_val)
+            #print(x_center)
+            data_numpy = CutoutCustom('coco').__call__(data_numpy, x_center, y_center)
+            #print('cutout applied')
 
         joints = db_rec['joints_3d']
         joints_vis = db_rec['joints_3d_vis']
@@ -181,16 +189,17 @@ class JointsDataset(Dataset):
     def cutout_xy(self, filename, cutout_dir):
         f = open(cutout_dir, 'rt')
         reader = csv.reader(f)
+        x_c, y_c = None, None
         for row in reader:
             if filename in row:
                 if row[-2]!='' or row[-1]!='':
                     x_c = int(row[-2])
                     y_c = int(row[-1])
-                else:
-                    x_c = None
-                    y_c = None
-            else:
-                y_c, x_c = None, None
+                #else:
+                #    x_c = None
+                #    y_c = None
+            #else:
+                #y_c, x_c = None, None
         return x_c, y_c # does this change for cv2?
 
     def generate_target(self, joints, joints_vis):
