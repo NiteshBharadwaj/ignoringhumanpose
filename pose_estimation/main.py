@@ -1,17 +1,37 @@
 from pathlib import Path
-import random
-import argparse
 import sys
+from LearningByIgnoring.utils.utils import set_random_seed
+
+from LearningByIgnoring.engine.meta_train import meta_train
+
+import argparse
 import os
+import pprint
+import shutil
+
 import torch
-import torch.nn.functional as F
-import numpy as np
-from utils.utils import set_random_seed, disable_grads, enable_grads, evaluate
-from utils.data_transform import transform
-from dalib.vision.datasets import Office31, OfficeHome
-from model.resnet import Resnet, param_lr, getParam, getOptim
-from engine.meta_train import meta_train
-import higher
+import torch.nn.parallel
+import torch.backends.cudnn as cudnn
+import torch.optim
+import torch.utils.data
+import torch.utils.data.distributed
+import torchvision.transforms as transforms
+from tensorboardX import SummaryWriter
+
+import _init_paths
+from core.config import config
+from core.config import update_config
+from core.config import update_dir
+from core.config import get_model_name
+from core.loss import JointsMSELossNoReduction
+from core.function import train
+from core.function import validate
+from utils.utils import get_optimizer
+from utils.utils import save_checkpoint
+from utils.utils import create_logger
+
+import dataset
+import models
 
 domainIdxDict = {'Ar': 0, 'Cl': 1, 'Pr': 2, 'Rw': 3, 'A': 0, 'D': 1, 'W': 2}
 
@@ -19,6 +39,24 @@ domainIdxDict = {'Ar': 0, 'Cl': 1, 'Pr': 2, 'Rw': 3, 'A': 0, 'D': 1, 'W': 2}
 def argument_parser():
     parser = argparse.ArgumentParser(
         description='regularize the target by the source')
+    parser.add_argument('--cfg',
+                        help='experiment configure file name',
+                        required=True,
+                        type=str)
+
+    args, rest = parser.parse_known_args()
+    # update config
+    update_config(args.cfg)
+    parser.add_argument('--frequent',
+                        help='frequency of logging',
+                        default=config.PRINT_FREQ,
+                        type=int)
+    parser.add_argument('--gpus',
+                        help='gpus',
+                        type=str)
+    parser.add_argument('--workers',
+                        help='num of dataloader workers',
+                        type=int)
     parser.add_argument('--verbose',
                         help='Print log file',
                         action='store_true')
@@ -32,8 +70,8 @@ def argument_parser():
                         choices=['resnet'],
                         help='Model',
                         default='resnet')
-    parser.add_argument('--source_domain', type=str, default="Cl")
-    parser.add_argument('--target_domain', type=str, default="Ar")
+    parser.add_argument('--source_domain', type=str, default="COCO")
+    parser.add_argument('--target_domain', type=str, default="MPII")
     parser.add_argument('--features_lr',
                         type=float,
                         help='Feature extractor learning rate',
@@ -64,9 +102,9 @@ def argument_parser():
                         default=42)
     parser.add_argument('--dataset',
                         type=str,
-                        choices=['office31', 'visda', 'officehome'],
+                        choices=['coco', 'augmend_coco', 'mpii'],
                         help='Dataset',
-                        default='officehome')
+                        default='coco')
     parser.add_argument('--data_dir',
                         type=str,
                         metavar='PATH',
@@ -130,7 +168,11 @@ def argument_parser():
         'train on reweighted src and tgt with regularization from reweighted src'
     )
     return parser
-
+def reset_config(config, args):
+    if args.gpus:
+        config.GPUS = args.gpus
+    if args.workers:
+        config.WORKERS = args.workers
 
 def main(args):
     print('args: ', args)
@@ -141,7 +183,28 @@ def main(args):
         wandb.init(project=args.wandb, name=args.save_dir)
     else:
         wandb = None
+    args = parse_args()
+    reset_config(config, args)
+    logger, final_output_dir, tb_log_dir = create_logger(
+        config, args.cfg, 'train')
+    logger.info(pprint.pformat(args))
+    logger.info(pprint.pformat(config))
 
+    # cudnn related setting
+    cudnn.benchmark = config.CUDNN.BENCHMARK
+    torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
+    torch.backends.cudnn.enabled = config.CUDNN.ENABLED
+
+    this_dir = os.path.dirname(__file__)
+    shutil.copy2(
+        os.path.join(this_dir, '../lib/models', config.MODEL.NAME + '.py'),
+        final_output_dir)
+
+    writer_dict = {
+        'writer': SummaryWriter(log_dir=tb_log_dir),
+        'train_global_steps': 0,
+        'valid_global_steps': 0,
+    }
     device = torch.device(
         f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     _save_dir = 'results/' + args.save_dir
@@ -149,38 +212,62 @@ def main(args):
     if not args.verbose:
         sys.stdout = open(f'{_save_dir}/log.txt', 'w')
     print('args: ', args)
-
+    dump_input = torch.rand((config.TRAIN.BATCH_SIZE,
+                             3,
+                             config.MODEL.IMAGE_SIZE[1],
+                             config.MODEL.IMAGE_SIZE[0]))
+    gpus = [int(i) for i in config.GPUS.split(',')]
+    criterion = JointsMSELossNoReduction(
+        use_target_weight=config.LOSS.USE_TARGET_WEIGHT
+    ).cuda()
+    criterion_reduce = JointsMSELoss(
+        use_target_weight=config.LOSS.USE_TARGET_WEIGHT
+    ).cuda()
     # Create dataloaders
-    train_transform = transform(train=True)
-    test_transform = transform(train=False)
+    normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                                     std=[0.229, 0.224, 0.225])
+    train_transform =  transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ])
+    test_transform =         transforms.Compose([
+            transforms.ToTensor(),
+            normalize,
+        ])
     data_root = os.path.join(args.data_dir, args.dataset)
-    if args.dataset == 'office31':
-        getDataset = Office31
-    elif args.dataset == 'officehome':
-        getDataset = OfficeHome
-    train_source_dataset = getDataset(root=data_root,
-                                      task=args.source_domain + '_train',
-                                      download=True,
-                                      transform=train_transform)
-
-    print(f'train target_task: {args.target_domain}')
-    train_target_dataset = getDataset(root=data_root,
-                                      task=args.target_domain + '_train',
-                                      download=True,
-                                      transform=train_transform)
+    train_source_dataset = eval('dataset.'+config.DATASET_SOURCE.DATASET)(
+        config,
+        config.DATASET_SOURCE.ROOT,
+        config.DATASET_SOURCE.TRAIN_SET,
+        True,
+        train_transform
+    )
+    train_target_dataset = eval('dataset.'+config.DATASET_TARGET.DATASET)(
+        config,
+        config.DATASET_TARGET.ROOT,
+        config.DATASET_TARGET.TRAIN_SET,
+        True,
+        train_transform
+    )
     train_dataset = train_target_dataset
     if args.baseline4 or args.ours3 or args.ours4 or args.ours5 or args.baseline2 or args.ours1:
         train_target_source_dataset = torch.utils.data.ConcatDataset(
             [train_target_dataset, train_source_dataset])
         train_dataset = train_target_source_dataset
-    valid_target_dataset = getDataset(root=data_root,
-                                      task=args.target_domain + '_val',
-                                      download=True,
-                                      transform=test_transform)
-    test_target_dataset = getDataset(root=data_root,
-                                     task=args.target_domain + '_test',
-                                     download=True,
-                                     transform=test_transform)
+    valid_target_dataset = eval('dataset.'+config.DATASET_TARGET.DATASET)(
+        config,
+        config.DATASET_TARGET.ROOT,
+        config.DATASET_TARGET.VALID_SET,
+        True,
+        test_transform
+    )
+    test_target_dataset = eval('dataset.'+config.DATASET_TARGET.DATASET)(
+        config,
+        config.DATASET_TARGET.ROOT,
+        config.DATASET_TARGET.TEST_SET,
+        False,
+        test_transform
+    )
 
     train_loader = torch.utils.data.DataLoader(train_dataset,
                                                batch_size=args.batch_size,
@@ -211,66 +298,73 @@ def main(args):
 
     if args.model == 'resnet':
         print('Using resnet')
-        model_tgt = Resnet(
-            num_classes=train_target_dataset.num_classes).to(device)
+        gpus = [int(i) for i in config.GPUS.split(',')]
+        model_tgt =  eval('models.'+config.MODEL.NAME+'.get_pose_net')(
+            config, is_train=True
+        )
+        model_tgt = torch.nn.DataParallel(model_tgt, device_ids=gpus).cuda()
+        optimizer_tgt = get_optimizer(config, model_tgt)
+        scheduler_tgt = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer_tgt, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
+        )
 
-        optimizer_tgt = getOptim(model_tgt, args)
-        scheduler_tgt = torch.optim.lr_scheduler.StepLR(
-            optimizer_tgt, step_size=args.step_size, gamma=1e-1)
+        model_src = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
+            config, is_train=True
+        )
+        model_src = torch.nn.DataParallel(model_src, device_ids=gpus).cuda()
+        optimizer_src = get_optimizer(config, model_tgt)
+        scheduler_src = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer_src, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
+        )
 
-        model_src = Resnet(
-            num_classes=train_source_dataset.num_classes).to(device)
-        optimizer_src = getOptim(model_src, args)
-        scheduler_src = torch.optim.lr_scheduler.StepLR(
-            optimizer_src, step_size=args.step_size, gamma=1e-1)
-
-    for epoch in range(0, args.num_epochs):
+    for epoch in range(config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH):
         train_valid_queue = iter(valid_loader)
         train_src_queue = iter(train_source_loader)
 
         model_src.train()
         model_tgt.train()
-        for i, (data_train, target_train,
-                domain_idx) in enumerate(train_loader):
+        for i, (data_input_train, target_train, target_weight_train,
+                meta_dict_train) in enumerate(train_loader):
             ##############get the validate target data ###############################
             try:
-                data_valid, target_valid, _ = next(train_valid_queue)
+                data_input_valid, target_valid, target_weight_valid, _ = next(train_valid_queue)
             except StopIteration:
                 train_valid_queue = iter(valid_loader)
-                data_valid, target_valid, _ = next(train_valid_queue)
-            x_tgt_val, y_tgt_val = data_valid.to(device), target_valid.to(
-                device)
+                data_input_valid, target_valid, target_weight_valid, _ = next(train_valid_queue)
+            x_tgt_val, y_tgt_val, w_tgt_val = data_input_valid.to(device), target_valid.to(
+                device), target_weight_valid.to(device)
             ###########get the images of target and source by using index##############
             if args.baseline4 or args.ours3 or args.ours4 or args.ours5 or args.baseline2 or args.ours1:
-                print(f'batch={i}')
-                source_idx = (domain_idx == domainIdxDict[args.source_domain]
-                              ).nonzero().squeeze()
-                target_idx = (domain_idx == domainIdxDict[args.target_domain]
-                              ).nonzero().squeeze()
-                x_tgt = torch.index_select(data_train, 0, target_idx)
-                y_tgt = torch.index_select(target_train, 0, target_idx)
-                x_src = torch.index_select(data_train, 0, source_idx)
-                y_src = torch.index_select(target_train, 0, source_idx)
-                x_src, y_src = x_src.to(device), y_src.to(device)
-                x_tgt, y_tgt = x_tgt.to(device), y_tgt.to(device)
+                pass
+                # print(f'batch={i}')
+                # source_idx = (domain_idx == domainIdxDict[args.source_domain]
+                #               ).nonzero().squeeze()
+                # target_idx = (domain_idx == domainIdxDict[args.target_domain]
+                #               ).nonzero().squeeze()
+                # x_tgt = torch.index_select(data_train, 0, target_idx)
+                # y_tgt = torch.index_select(target_train, 0, target_idx)
+                # x_src = torch.index_select(data_train, 0, source_idx)
+                # y_src = torch.index_select(target_train, 0, source_idx)
+                # x_src, y_src = x_src.to(device), y_src.to(device)
+                # x_tgt, y_tgt = x_tgt.to(device), y_tgt.to(device)
             else:
-                x_tgt, y_tgt = data_train.to(device), target_train.to(device)
+                x_tgt, y_tgt, w_tgt = data_input_train.to(device), target_train.to(device), target_weight_train.to(device)
                 try:
-                    data_train_src, target_train_src, _ = next(train_src_queue)
+                    data_input_src, target_src, target_weight_src, _ = next(train_src_queue)
                 except StopIteration:
                     train_src_queue = iter(train_source_loader)
-                    data_train_src, target_train_src, _ = next(train_src_queue)
-                x_src, y_src = data_train_src.to(device), target_train_src.to(
-                    device)
+                    data_input_src, target_src, target_weight_src, _ = next(train_src_queue)
+                x_src, y_src, w_src = data_input_src.to(device), target_src.to(
+                    device), target_weight_src.to(device)
             #############################################################################
             print('############Starting meta learning###############')
             model_tgt_backup = model_tgt.state_dict()
             optimizer_tgt_backup = optimizer_tgt.state_dict()
             model_src_backup = model_src.state_dict()
             optimizer_src_backup = optimizer_src.state_dict()
-            w = meta_train(args, model_tgt, model_src, x_tgt, y_tgt, x_src,
-                           y_src, x_tgt_val, y_tgt_val, optimizer_tgt,
-                           optimizer_src, device)
+            w = meta_train(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src,
+                           y_src, w_src, x_tgt_val, y_tgt_val, w_tgt_val, optimizer_tgt,
+                           optimizer_src, device,criterion)
             if args.ours2:
                 A = w
             elif args.ours3 or args.ours1:
@@ -286,7 +380,7 @@ def main(args):
             #######################normal learning#################################
             print('############Starting normal learning###############')
             yhat_src = model_src(x_src)
-            loss_src = F.cross_entropy(yhat_src, y_src, reduction='none')
+            loss_src = criterion(yhat_src,y_src,w_src) # TODO: Reduction should be none here
             if args.ours2 or args.ours4 or args.ours5:
                 loss_src = torch.mean(A * loss_src)
             else:
@@ -296,17 +390,18 @@ def main(args):
             optimizer_src.step()
 
             yhat_tgt = model_tgt(x_tgt)
-            loss_tgt = F.cross_entropy(yhat_tgt, y_tgt, reduction='none')
+            loss_tgt = criterion(yhat_tgt,y_tgt,w_tgt) # TODO: Reduction should be none here
             if args.ours1 or args.ours3 or args.ours4 or args.ours5 or args.baseline2 or args.baseline4:
-                yhat_src2 = model_tgt(x_src)
-                loss_src2 = F.cross_entropy(yhat_src2, y_src, reduction='none')
-                if args.baseline4 or args.ours4 or args.baseline2:
-                    loss_src2 = loss_src2 * args.gamma
-                    final_loss = torch.cat((loss_tgt, loss_src2), dim=0)
-                else:
-                    loss_src2 = B * loss_src2 * args.gamma
-                    final_loss = torch.cat((loss_tgt, loss_src2), dim=0)
-                final_loss = torch.mean(final_loss)
+                pass
+                # yhat_src2 = model_tgt(x_src)
+                # loss_src2 = F.cross_entropy(yhat_src2, y_src, reduction='none')
+                # if args.baseline4 or args.ours4 or args.baseline2:
+                #     loss_src2 = loss_src2 * args.gamma
+                #     final_loss = torch.cat((loss_tgt, loss_src2), dim=0)
+                # else:
+                #     loss_src2 = B * loss_src2 * args.gamma
+                #     final_loss = torch.cat((loss_tgt, loss_src2), dim=0)
+                # final_loss = torch.mean(final_loss)
             else:
                 final_loss = torch.mean(loss_tgt)
             norm_sum = 0
@@ -325,8 +420,12 @@ def main(args):
                 wandb.log({"norm": norm_sum})
         print(f'Finished epoch {epoch}')
         print('Starting validation...')
-        val_tgt_acc, val_tgt_loss = evaluate(model_tgt, valid_loader, device)
-        test_tgt_acc, test_tgt_loss = evaluate(model_tgt, test_loader, device)
+        val_tgt_acc, val_tgt_loss = validate(config, valid_loader, valid_loader.dataset, model_tgt,
+                                  criterion_reduce, final_output_dir, tb_log_dir,
+                                  writer_dict) # TODO
+        test_tgt_acc, test_tgt_loss = validate(config, test_loader, test_loader.dataset, model_tgt,
+                                  criterion_reduce, final_output_dir, tb_log_dir,
+                                  writer_dict) #TODO
 
         scheduler_tgt.step()
         if args.baseline3 or args.baseline4 or args.ours2 or args.ours3 or args.ours4 or args.ours5:
@@ -341,7 +440,9 @@ def main(args):
             })
 
     torch.save(model_tgt.state_dict(), f'{_save_dir}/final_model.pt')
-    test_tgt_acc, test_tgt_loss = evaluate(model_tgt, test_loader, device)
+    test_tgt_acc, test_tgt_loss = validate(config, test_loader, test_loader.dataset, model_tgt,
+                                  criterion_reduce, final_output_dir, tb_log_dir,
+                                  writer_dict)  #TODO
     print(f'test tgt acc: {test_tgt_acc}')
     print(f'test tgt loss: {test_tgt_loss}')
     with open(f'{_save_dir}/results.txt', 'a') as res:
