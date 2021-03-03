@@ -14,7 +14,7 @@ DATASET_SRC:
   ROT_FACTOR: 40
   SCALE_FACTOR: 0.3
 DATASET_TARGET:
-  DATASET: 'mpii'
+  DATASET: 'coco'
   ROOT: 'data/coco/'
   TEST_SET: 'val2017'
   TRAIN_SET: 'train2017'
