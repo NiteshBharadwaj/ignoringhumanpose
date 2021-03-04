@@ -126,6 +126,12 @@ config.DEBUG.SAVE_BATCH_IMAGES_PRED = False
 config.DEBUG.SAVE_HEATMAPS_GT = False
 config.DEBUG.SAVE_HEATMAPS_PRED = False
 
+# Label Noise
+config.EXP_PATH = 'experiments/new'
+config.NOISE_PATH = 'noisy_labelled_data'
+config.NOISE_SIZE = 3
+config.NOISE_IND = True
+
 
 def _update_dict(k, v):
     if k == 'DATASET':
@@ -193,13 +199,13 @@ def update_dir(model_dir, log_dir, data_dir):
         config.DATA_DIR = data_dir
 
     config.DATASET.ROOT = os.path.join(
-            config.DATA_DIR, config.DATASET.ROOT)
+        config.DATA_DIR, config.DATASET.ROOT)
 
     config.TEST.COCO_BBOX_FILE = os.path.join(
-            config.DATA_DIR, config.TEST.COCO_BBOX_FILE)
+        config.DATA_DIR, config.TEST.COCO_BBOX_FILE)
 
     config.MODEL.PRETRAINED = os.path.join(
-            config.DATA_DIR, config.MODEL.PRETRAINED)
+        config.DATA_DIR, config.MODEL.PRETRAINED)
 
 
 def get_model_name(cfg):

@@ -28,6 +28,7 @@ from core.config import update_config
 from core.config import update_dir
 from core.config import get_model_name
 from core.loss import JointsMSELoss
+from core.function import create_noise_data
 from core.function import train
 from core.function import validate
 from utils.utils import get_optimizer
@@ -89,7 +90,7 @@ def main():
     torch.backends.cudnn.deterministic = config.CUDNN.DETERMINISTIC
     torch.backends.cudnn.enabled = config.CUDNN.ENABLED
 
-    model = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
+    model = eval('models.' + config.MODEL.NAME + '.get_pose_net')(
         config, is_train=True
     )
 
@@ -128,7 +129,7 @@ def main():
     # Data loading code
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                      std=[0.229, 0.224, 0.225])
-    train_dataset = eval('dataset.'+config.DATASET.DATASET)(
+    train_dataset = eval('dataset.' + config.DATASET.DATASET)(
         config,
         config.DATASET.ROOT,
         config.DATASET.TRAIN_SET,
@@ -138,7 +139,7 @@ def main():
             normalize,
         ])
     )
-    valid_dataset = eval('dataset.'+config.DATASET.DATASET)(
+    valid_dataset = eval('dataset.' + config.DATASET.DATASET)(
         config,
         config.DATASET.ROOT,
         config.DATASET.TEST_SET,
@@ -151,18 +152,22 @@ def main():
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset,
-        batch_size=config.TRAIN.BATCH_SIZE*len(gpus),
+        batch_size=config.TRAIN.BATCH_SIZE * len(gpus),
         shuffle=config.TRAIN.SHUFFLE,
         num_workers=config.WORKERS,
         pin_memory=True
     )
     valid_loader = torch.utils.data.DataLoader(
         valid_dataset,
-        batch_size=config.TEST.BATCH_SIZE*len(gpus),
+        batch_size=config.TEST.BATCH_SIZE * len(gpus),
         shuffle=False,
         num_workers=config.WORKERS,
         pin_memory=True
     )
+
+    if (config.NOISE_IND):
+        if not os.path.isfile(f"{config.EXP_PATH}/{config.NOISE_DPATH}"):
+            create_noise_data(config, train_loader)
 
     best_perf = 0.0
     best_model = False
@@ -172,7 +177,6 @@ def main():
         # train for one epoch
         train(config, train_loader, model, criterion, optimizer, epoch,
               final_output_dir, tb_log_dir, writer_dict)
-
 
         # evaluate on validation set
         perf_indicator = validate(config, valid_loader, valid_dataset, model,

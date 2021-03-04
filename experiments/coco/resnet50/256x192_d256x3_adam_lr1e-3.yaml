@@ -60,7 +60,7 @@ TRAIN:
   LR_FACTOR: 0.1
   LR_STEP:
   - 90
-  - 120 
+  - 120
   WD: 0.0001
   GAMMA1: 0.99
   GAMMA2: 0.0
@@ -83,3 +83,8 @@ DEBUG:
   SAVE_BATCH_IMAGES_PRED: true
   SAVE_HEATMAPS_GT: true
   SAVE_HEATMAPS_PRED: true
+EXP_PATH: 'experiments/resnet50'
+NOISE_PATH: 'noisy_labelled_data.pkl'
+NOISE_SIZE: 3
+NOISE_IND: True
+

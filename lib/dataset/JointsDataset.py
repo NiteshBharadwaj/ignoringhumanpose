@@ -13,6 +13,7 @@ import logging
 import random
 
 import cv2
+import pickle as pkl
 import numpy as np
 import torch
 from torch.utils.data import Dataset
@@ -51,6 +52,11 @@ class JointsDataset(Dataset):
         self.transform = transform
         self.db = []
 
+        self.noise = {}
+        self.noise_size = cfg.NOISE_SIZE
+        self.noise_ind = cfg.NOISE_IND
+        self.noise_path = cfg.NOISE_PATH
+
     def _get_db(self):
         raise NotImplementedError
 
@@ -59,6 +65,10 @@ class JointsDataset(Dataset):
 
     def __len__(self,):
         return len(self.db)
+
+    def load_noise(self, config):
+        with open(f"{config.EXP_PATH}/{config.NOISE_PATH}", 'rb') as handle:
+            self.noise = pkl.load(handle)
 
     def __getitem__(self, idx):
         db_rec = copy.deepcopy(self.db[idx])
@@ -90,8 +100,8 @@ class JointsDataset(Dataset):
         if self.is_train:
             sf = self.scale_factor
             rf = self.rotation_factor
-            s = s * np.clip(np.random.randn()*sf + 1, 1 - sf, 1 + sf)
-            r = np.clip(np.random.randn()*rf, -rf*2, rf*2) \
+            s = s * np.clip(np.random.randn() * sf + 1, 1 - sf, 1 + sf)
+            r = np.clip(np.random.randn() * rf, -rf * 2, rf * 2) \
                 if random.random() <= 0.6 else 0
 
             if self.flip and random.random() <= 0.5:
@@ -114,7 +124,12 @@ class JointsDataset(Dataset):
             if joints_vis[i, 0] > 0.0:
                 joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
 
-        target, target_weight = self.generate_target(joints, joints_vis)
+        if not self.noise:
+            self.noise[idx] = (np.random.random(self.num_joints),
+                               np.random.uniform(-1 * self.noise_size *
+                                                 self.sigma, self.noise_size * self.sigma),
+                               np.random.uniform(-1 * self.noise_size * self.sigma, self.noise_size * self.sigma))
+        target, target_weight = self.generate_target(joints, joints_vis, idx)
 
         target = torch.from_numpy(target)
         target_weight = torch.from_numpy(target_weight)
@@ -155,8 +170,8 @@ class JointsDataset(Dataset):
             area = rec['scale'][0] * rec['scale'][1] * (self.pixel_std**2)
             joints_center = np.array([joints_x, joints_y])
             bbox_center = np.array(rec['center'])
-            diff_norm2 = np.linalg.norm((joints_center-bbox_center), 2)
-            ks = np.exp(-1.0*(diff_norm2**2) / ((0.2)**2*2.0*area))
+            diff_norm2 = np.linalg.norm((joints_center - bbox_center), 2)
+            ks = np.exp(-1.0 * (diff_norm2**2) / ((0.2)**2 * 2.0 * area))
 
             metric = (0.2 / 16) * num_vis + 0.45 - 0.2 / 16
             if ks > metric:
@@ -166,7 +181,7 @@ class JointsDataset(Dataset):
         logger.info('=> num selected db: {}'.format(len(db_selected)))
         return db_selected
 
-    def generate_target(self, joints, joints_vis):
+    def generate_target(self, joints, joints_vis, idx):
         '''
         :param joints:  [num_joints, 3]
         :param joints_vis: [num_joints, 3]
@@ -190,6 +205,13 @@ class JointsDataset(Dataset):
                 feat_stride = self.image_size / self.heatmap_size
                 mu_x = int(joints[joint_id][0] / feat_stride[0] + 0.5)
                 mu_y = int(joints[joint_id][1] / feat_stride[1] + 0.5)
+
+                if self.noise_ind:
+                    if self.noise:
+                        if joint_id == self.noise[idx][0]:
+                            mu_x += self.noise[idx][1]
+                            mu_y += self.noise[idx][2]
+
                 # Check that any part of the gaussian is in-bounds
                 ul = [int(mu_x - tmp_size), int(mu_y - tmp_size)]
                 br = [int(mu_x + tmp_size + 1), int(mu_y + tmp_size + 1)]
@@ -205,7 +227,8 @@ class JointsDataset(Dataset):
                 y = x[:, np.newaxis]
                 x0 = y0 = size // 2
                 # The gaussian is not normalized, we want the center value to equal 1
-                g = np.exp(- ((x - x0) ** 2 + (y - y0) ** 2) / (2 * self.sigma ** 2))
+                g = np.exp(- ((x - x0) ** 2 + (y - y0) ** 2) /
+                           (2 * self.sigma ** 2))
 
                 # Usable gaussian range
                 g_x = max(0, -ul[0]), min(br[0], self.heatmap_size[0]) - ul[0]
