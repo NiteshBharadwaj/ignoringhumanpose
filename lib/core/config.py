@@ -75,6 +75,34 @@ config.DATASET.FLIP = True
 config.DATASET.SCALE_FACTOR = 0.25
 config.DATASET.ROT_FACTOR = 30
 
+config.DATASET_TARGET = edict()
+config.DATASET_TARGET.ROOT = ''
+config.DATASET_TARGET.DATASET = 'mpii'
+config.DATASET_TARGET.TRAIN_SET = 'train'
+config.DATASET_TARGET.TEST_SET = 'valid'
+config.DATASET_TARGET.VAL_SET = 'valid'
+config.DATASET_TARGET.DATA_FORMAT = 'jpg'
+config.DATASET_TARGET.HYBRID_JOINTS_TYPE = ''
+config.DATASET_TARGET.SELECT_DATA = False
+
+# training data augmentation
+config.DATASET_TARGET.FLIP = True
+config.DATASET_TARGET.SCALE_FACTOR = 0.25
+config.DATASET_TARGET.ROT_FACTOR = 30
+
+config.DATASET_SRC = edict()
+config.DATASET_SRC.ROOT = ''
+config.DATASET_SRC.DATASET = 'mpii'
+config.DATASET_SRC.TRAIN_SET = 'train'
+config.DATASET_SRC.TEST_SET = 'valid'
+config.DATASET_SRC.DATA_FORMAT = 'jpg'
+config.DATASET_SRC.HYBRID_JOINTS_TYPE = ''
+config.DATASET_SRC.SELECT_DATA = False
+
+# training data augmentation
+config.DATASET_SRC.FLIP = True
+config.DATASET_SRC.SCALE_FACTOR = 0.25
+config.DATASET_SRC.ROT_FACTOR = 30
 # train
 config.TRAIN = edict()
 

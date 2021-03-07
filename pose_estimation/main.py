@@ -1,8 +1,9 @@
+
+from __future__ import absolute_import
+from __future__ import division
+#from __future__ import print_function
 from pathlib import Path
 import sys
-from LearningByIgnoring.utils.utils import set_random_seed
-
-from LearningByIgnoring.engine.meta_train import meta_train
 
 import argparse
 import os
@@ -23,13 +24,16 @@ from core.config import config
 from core.config import update_config
 from core.config import update_dir
 from core.config import get_model_name
-from core.loss import JointsMSELossNoReduction
+from core.loss import JointsMSELossNoReduction, JointsMSELoss
 from core.function import train
 from core.function import validate
 from utils.utils import get_optimizer
 from utils.utils import save_checkpoint
 from utils.utils import create_logger
 
+from lbi_utils.utils import set_random_seed
+
+from engine.meta_train import meta_train
 import dataset
 import models
 
@@ -87,7 +91,7 @@ def argument_parser():
     parser.add_argument('--batch_size',
                         type=int,
                         help='Batch size',
-                        default=64)
+                        default=8)
     parser.add_argument('--weight_decay',
                         type=float,
                         help='Weight Decay',
@@ -183,7 +187,6 @@ def main(args):
         wandb.init(project=args.wandb, name=args.save_dir)
     else:
         wandb = None
-    args = parse_args()
     reset_config(config, args)
     logger, final_output_dir, tb_log_dir = create_logger(
         config, args.cfg, 'train')
@@ -205,6 +208,8 @@ def main(args):
         'train_global_steps': 0,
         'valid_global_steps': 0,
     }
+    print("*****************************************************************************")
+    print("Starting")
     device = torch.device(
         f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     _save_dir = 'results/' + args.save_dir
@@ -218,7 +223,7 @@ def main(args):
                              config.MODEL.IMAGE_SIZE[0]))
     gpus = [int(i) for i in config.GPUS.split(',')]
     criterion = JointsMSELossNoReduction(
-        use_target_weight=config.LOSS.USE_TARGET_WEIGHT
+        use_target_weight=config.LOSS.USE_TARGET_WEIGHT, logger=logger
     ).cuda()
     criterion_reduce = JointsMSELoss(
         use_target_weight=config.LOSS.USE_TARGET_WEIGHT
@@ -235,10 +240,10 @@ def main(args):
             normalize,
         ])
     data_root = os.path.join(args.data_dir, args.dataset)
-    train_source_dataset = eval('dataset.'+config.DATASET_SOURCE.DATASET)(
+    train_source_dataset = eval('dataset.'+config.DATASET_SRC.DATASET)(
         config,
-        config.DATASET_SOURCE.ROOT,
-        config.DATASET_SOURCE.TRAIN_SET,
+        config.DATASET_SRC.ROOT,
+        config.DATASET_SRC.TRAIN_SET,
         True,
         train_transform
     )
@@ -257,7 +262,7 @@ def main(args):
     valid_target_dataset = eval('dataset.'+config.DATASET_TARGET.DATASET)(
         config,
         config.DATASET_TARGET.ROOT,
-        config.DATASET_TARGET.VALID_SET,
+        config.DATASET_TARGET.VAL_SET,
         True,
         test_transform
     )
@@ -295,14 +300,20 @@ def main(args):
         shuffle=True,
         pin_memory=True,
         drop_last=True)
+    print("*****************************************************************************")
+    #print("MOdel", model_tgt)
 
-    if args.model == 'resnet':
-        print('Using resnet')
+    if 1:#args.model == 'resnet':
+        logger.info('Using resnet')
         gpus = [int(i) for i in config.GPUS.split(',')]
+        logger.info("*****************************************************************************")
+        print("Loading target")
         model_tgt =  eval('models.'+config.MODEL.NAME+'.get_pose_net')(
             config, is_train=True
-        )
-        model_tgt = torch.nn.DataParallel(model_tgt, device_ids=gpus).cuda()
+        ).to(device)
+        logger.info("*****************************************************************************")
+        print("MOdel", model_tgt)
+        #model_tgt = torch.nn.DataParallel(model_tgt, device_ids=gpus).cuda()
         optimizer_tgt = get_optimizer(config, model_tgt)
         scheduler_tgt = torch.optim.lr_scheduler.MultiStepLR(
             optimizer_tgt, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
@@ -310,9 +321,9 @@ def main(args):
 
         model_src = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
             config, is_train=True
-        )
-        model_src = torch.nn.DataParallel(model_src, device_ids=gpus).cuda()
-        optimizer_src = get_optimizer(config, model_tgt)
+        ).to(device)
+        #model_src = torch.nn.DataParallel(model_src, device_ids=gpus).cuda()
+        optimizer_src = get_optimizer(config, model_src)
         scheduler_src = torch.optim.lr_scheduler.MultiStepLR(
             optimizer_src, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
         )
@@ -357,14 +368,14 @@ def main(args):
                 x_src, y_src, w_src = data_input_src.to(device), target_src.to(
                     device), target_weight_src.to(device)
             #############################################################################
-            print('############Starting meta learning###############')
+            #logger.info('############Starting meta learning###############')
             model_tgt_backup = model_tgt.state_dict()
             optimizer_tgt_backup = optimizer_tgt.state_dict()
             model_src_backup = model_src.state_dict()
             optimizer_src_backup = optimizer_src.state_dict()
             w = meta_train(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src,
                            y_src, w_src, x_tgt_val, y_tgt_val, w_tgt_val, optimizer_tgt,
-                           optimizer_src, device,criterion)
+                           optimizer_src, device,criterion,logger)
             if args.ours2:
                 A = w
             elif args.ours3 or args.ours1:
@@ -373,12 +384,13 @@ def main(args):
                 A = w
             elif args.ours5:
                 A, B = w
+            #logger.info(A.shape)
             model_tgt.load_state_dict(model_tgt_backup)
             optimizer_tgt.load_state_dict(optimizer_tgt_backup)
             model_src.load_state_dict(model_src_backup)
             optimizer_src.load_state_dict(optimizer_src_backup)
             #######################normal learning#################################
-            print('############Starting normal learning###############')
+            #logger.info('############Starting normal learning###############')
             yhat_src = model_src(x_src)
             loss_src = criterion(yhat_src,y_src,w_src) # TODO: Reduction should be none here
             if args.ours2 or args.ours4 or args.ours5:
@@ -418,8 +430,8 @@ def main(args):
             optimizer_tgt.step()
             if args.wandb is not None:
                 wandb.log({"norm": norm_sum})
-        print(f'Finished epoch {epoch}')
-        print('Starting validation...')
+        logger.info(f'Finished epoch {epoch}')
+        logger.info('Starting validation...')
         val_tgt_acc, val_tgt_loss = validate(config, valid_loader, valid_loader.dataset, model_tgt,
                                   criterion_reduce, final_output_dir, tb_log_dir,
                                   writer_dict) # TODO
@@ -431,6 +443,13 @@ def main(args):
         if args.baseline3 or args.baseline4 or args.ours2 or args.ours3 or args.ours4 or args.ours5:
             scheduler_src.step()
         if args.wandb is not None:
+            logger.info({
+                "epoch": epoch,
+                "val_tgt_acc": val_tgt_acc,
+                "val_tgt_loss": val_tgt_loss,
+                "test_tgt_acc_per_epoch": test_tgt_acc,
+                "test_tgt_loss_per_epoch": test_tgt_loss
+            })
             wandb.log({
                 "epoch": epoch,
                 "val_tgt_acc": val_tgt_acc,
@@ -443,8 +462,8 @@ def main(args):
     test_tgt_acc, test_tgt_loss = validate(config, test_loader, test_loader.dataset, model_tgt,
                                   criterion_reduce, final_output_dir, tb_log_dir,
                                   writer_dict)  #TODO
-    print(f'test tgt acc: {test_tgt_acc}')
-    print(f'test tgt loss: {test_tgt_loss}')
+    logger.info(f'test tgt acc: {test_tgt_acc}')
+    logger.info(f'test tgt loss: {test_tgt_loss}')
     with open(f'{_save_dir}/results.txt', 'a') as res:
         res.write(
             f'pretraining domain:{args.source_domain}, finetuning domain:{args.target_domain} \n test accuracy: {test_tgt_acc}, test loss: {test_tgt_loss}'

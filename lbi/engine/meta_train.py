@@ -10,7 +10,7 @@ import higher
 
 
 def meta_train(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src, y_src, w_src,
-               x_tgt_val, y_tgt_val, w_tgt_val, optimizer_tgt, optimizer_src, device, criterion):
+               x_tgt_val, y_tgt_val, w_tgt_val, optimizer_tgt, optimizer_src, device, criterion, logger):
     meta_train_mode = None
     if args.baseline2 or args.ours1:
         meta_train_mode = meta_train_ours1
@@ -22,10 +22,11 @@ def meta_train(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src, y_src, w_
         meta_train_mode = meta_train_ours4
     elif args.ours5:
         meta_train_mode = meta_train_ours5
-
+    else:
+        meta_train_mode = meta_train_ours2 # Here
     return meta_train_mode(args, model_tgt, model_src, x_tgt, y_tgt,w_tgt, x_src,
                            y_src,w_src, x_tgt_val, y_tgt_val,w_tgt_val, optimizer_tgt,
-                           optimizer_src, device, criterion)
+                           optimizer_src, device, criterion, logger)
 
 
 def meta_train_ours1(args, model_tgt, model_src, x_tgt, y_tgt, x_src, y_src,
@@ -39,7 +40,7 @@ def meta_train_ours1(args, model_tgt, model_src, x_tgt, y_tgt, x_src, y_src,
                                                      foptimizer_tgt):
             yhat_tgt = fmodel_tgt(x_tgt)
             loss_tgt = F.cross_entropy(yhat_tgt, y_tgt, reduction='none')
-
+            
             yhat_src = fmodel_tgt(x_src)
             loss_src = F.cross_entropy(yhat_src, y_src, reduction='none')
 
@@ -70,7 +71,7 @@ def meta_train_ours1(args, model_tgt, model_src, x_tgt, y_tgt, x_src, y_src,
 
 def meta_train_ours2(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src, y_src, w_src,
                      x_tgt_val, y_tgt_val, w_tgt_val, optimizer_tgt, optimizer_src,
-                     device, criterion):
+                     device, criterion, logger):
     model_tgt.train()
     model_src.train()
     eps_A = None
@@ -80,21 +81,21 @@ def meta_train_ours2(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src, y_s
                                                      foptimizer_src):
             yhat_src = fmodel_src(x_src)
             loss_src = criterion(yhat_src, y_src, w_src)
-
-            print(f"loss_src without weight={loss_src.mean().item():.2f}")
+            #logger.info(loss_src.shape)
+            #logger.info(f"loss_src without weight={loss_src.mean().item():.2f}")
             if eps_A is None:
                 eps_A = torch.zeros(loss_src.size(),
                                     requires_grad=True).to(device)
             else:
                 eps_A.requires_grad = True
             loss_src = torch.mean(eps_A * loss_src)
-            print(f'loss_src weight={loss_src.item():.2f}')
+            #logger.info(f'loss_src weight={loss_src.item():.2f}')
             foptimizer_src.step(loss_src)
             with higher.innerloop_ctx(model_tgt,
                                       optimizer_tgt) as (fmodel_tgt,
                                                          foptimizer_tgt):
                 yhat_tgt = fmodel_tgt(x_tgt)
-                loss_tgt = criterion(yhat_tgt, y_tgt,w_tgt)
+                loss_tgt = criterion(yhat_tgt, y_tgt,w_tgt).mean()
                 norm_sum = 0
                 for sw, tw in zip(fmodel_src.parameters(),
                                   fmodel_tgt.parameters()):
@@ -106,7 +107,7 @@ def meta_train_ours2(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src, y_s
                 foptimizer_tgt.step(loss_tgt)
 
                 yhat_tgt_val = fmodel_tgt(x_tgt_val)
-                loss_tgt_val = criterion(yhat_tgt_val, y_tgt_val,w_tgt_val)
+                loss_tgt_val = criterion(yhat_tgt_val, y_tgt_val,w_tgt_val).mean()
                 eps_A_grads = torch.autograd.grad(loss_tgt_val,
                                                   eps_A)[0].detach()
         A_tilde = torch.clamp(-eps_A_grads, min=0)
@@ -117,7 +118,7 @@ def meta_train_ours2(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src, y_s
             A = (A_tilde - A_tilde_min) / (A_tilde_max - A_tilde_min)
         else:
             A = A_tilde
-        print(f'A: {A}')
+        #logger.info(f'A: {A}')
         eps_A = A
     return eps_A
 

@@ -87,7 +87,7 @@ def argument_parser():
     parser.add_argument('--batch_size',
                         type=int,
                         help='Batch size',
-                        default=64)
+                        default=32)
     parser.add_argument('--weight_decay',
                         type=float,
                         help='Weight Decay',
