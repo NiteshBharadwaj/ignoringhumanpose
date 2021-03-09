@@ -9,7 +9,7 @@ DATASET_SRC:
   DATASET: 'coco'
   ROOT: 'data/coco/'
   TEST_SET: 'val2017'
-  TRAIN_SET: 'val2017'
+  TRAIN_SET: 'train2017'
   FLIP: true
   ROT_FACTOR: 40
   SCALE_FACTOR: 0.3
@@ -17,8 +17,8 @@ DATASET_TARGET:
   DATASET: 'mpii'
   ROOT: 'data/mpii/'
   TEST_SET: 'valid'
-  TRAIN_SET: 'valid'
-  VAL_SET: 'valid'
+  TRAIN_SET: 'train_finetune'
+  VAL_SET: 'train_validate'
   FLIP: true
   ROT_FACTOR: 40
   SCALE_FACTOR: 0.3

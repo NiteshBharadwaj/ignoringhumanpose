@@ -42,12 +42,25 @@ class MPIIDataset(JointsDataset):
         # create train/val split
         file_name = os.path.join(self.root,
                                  'annot',
-                                 self.image_set+'.json')
+                                 self.image_set.split("_")[0]+'.json')
         with open(file_name) as anno_file:
             anno = json.load(anno_file)
 
         gt_db = []
-        for a in anno:
+        counter = 0
+        is_finetune = self.image_set.split("_")[0]=="train" and self.image_set.split("_")[1]=="finetune"
+        is_train = self.image_set.split("_")[0]=="train"
+        #logger.info(len(anno))
+        for counter, a in enumerate(anno):
+            #logger.info(counter)
+            if is_train:
+                if is_finetune:
+                    if counter%3==0:
+                        continue
+                else:
+                    if counter%3!=0:
+                        continue
+            counter+=1
             image_name = a['image']
 
             c = np.array(a['center'], dtype=np.float)
