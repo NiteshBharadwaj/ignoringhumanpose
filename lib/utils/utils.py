@@ -16,7 +16,8 @@ from pathlib import Path
 import torch
 import torch.optim as optim
 
-from core.config import get_model_name
+from core.config import get_tgt_model_name, get_src_model_name # TODOSandalika # get_model_name
+# from core.config import get_model_name
 
 
 def create_logger(cfg, cfg_name, phase='train'):
@@ -29,7 +30,7 @@ def create_logger(cfg, cfg_name, phase='train'):
     dataset = cfg.DATASET.DATASET + '_' + cfg.DATASET.HYBRID_JOINTS_TYPE \
         if cfg.DATASET.HYBRID_JOINTS_TYPE else cfg.DATASET.DATASET
     dataset = dataset.replace(':', '_')
-    model, _ = get_model_name(cfg)
+    model, _ = get_src_model_name(cfg) # get_model_name(cfg)
     cfg_name = os.path.basename(cfg_name).split('.')[0]
 
     final_output_dir = root_output_dir / dataset / model / cfg_name

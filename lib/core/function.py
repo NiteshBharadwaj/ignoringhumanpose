@@ -15,7 +15,8 @@ import os
 import numpy as np
 import torch
 
-from core.config import get_model_name
+from core.config import get_tgt_model_name, get_src_model_name # TODOSandalika # get_model_name
+# from core.config import get_model_name
 from core.evaluate import accuracy
 from core.inference import get_final_preds
 from utils.transforms import flip_back
@@ -87,7 +88,7 @@ def train(config, train_loader, model, criterion, optimizer, epoch,
 
 
 def validate(config, val_loader, val_dataset, model, criterion, output_dir,
-             tb_log_dir, writer_dict=None):
+             tb_log_dir, is_src=False, writer_dict=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
     acc = AverageMeter()
@@ -96,8 +97,13 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
     model.eval()
 
     num_samples = len(val_dataset)
-    all_preds = np.zeros((num_samples, config.MODEL.NUM_JOINTS, 3),
+    if not is_src:
+        all_preds = np.zeros((num_samples, config.MODEL_SRC.NUM_JOINTS, 3),
                          dtype=np.float32)
+    else:
+        all_preds = np.zeros((num_samples, config.MODEL_TGT.NUM_JOINTS, 3),
+                         dtype=np.float32)
+    # logger.info(f'all_preds_shape {all_preds.shape}')
     all_boxes = np.zeros((num_samples, 6))
     image_path = []
     filenames = []
@@ -109,6 +115,7 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
             # compute output
             input = input.cuda()
             output = model(input)
+            # logger.info(f'output_shape {output.shape}')
             if config.TEST.FLIP_TEST:
                 # this part is ugly, because pytorch has not supported negative index
                 # input_flipped = model(input[:, :, :, ::-1])
@@ -150,8 +157,9 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
 
             preds, maxvals = get_final_preds(
                 config, output.clone().cpu().numpy(), c, s)
+            # logger.info(f'preds_shape {preds.shape}')
 
-            all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2]
+            all_preds[idx:idx + num_images, :, 0:2] = preds[:, :, 0:2] # TODOSandalika
             all_preds[idx:idx + num_images, :, 2:3] = maxvals
             # double check this all_boxes parts
             all_boxes[idx:idx + num_images, 0:2] = c[:, 0:2]
@@ -182,7 +190,10 @@ def validate(config, val_loader, val_dataset, model, criterion, output_dir,
        #     config, all_preds, output_dir, all_boxes, image_path,
        #     filenames, imgnums)
 
-        _, full_arch_name = get_model_name(config)
+        if not is_src:
+            _, full_arch_name = get_src_model_name(config)
+        else:
+            _, full_arch_name = get_tgt_model_name(config)
         #if isinstance(name_values, list):
         #    for name_value in name_values:
         #        _print_name_value(name_value, full_arch_name)

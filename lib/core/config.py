@@ -47,6 +47,7 @@ MODEL_EXTRAS = {
 }
 
 # common params for NETWORK
+"""
 config.MODEL = edict()
 config.MODEL.NAME = 'pose_resnet'
 config.MODEL.INIT_WEIGHTS = True
@@ -56,6 +57,27 @@ config.MODEL.IMAGE_SIZE = [256, 256]  # width * height, ex: 192 * 256
 config.MODEL.EXTRA = MODEL_EXTRAS[config.MODEL.NAME]
 
 config.MODEL.STYLE = 'pytorch'
+"""
+# TODOSandalika
+config.MODEL_SRC = edict()
+config.MODEL_SRC.NAME = 'pose_resnet'
+config.MODEL_SRC.INIT_WEIGHTS = True
+config.MODEL_SRC.PRETRAINED = ''
+config.MODEL_SRC.NUM_JOINTS = 16
+config.MODEL_SRC.IMAGE_SIZE = [256, 256]  # width * height, ex: 192 * 256
+config.MODEL_SRC.EXTRA = MODEL_EXTRAS[config.MODEL_SRC.NAME]
+
+config.MODEL_SRC.STYLE = 'pytorch'
+
+config.MODEL_TGT = edict()
+config.MODEL_TGT.NAME = 'pose_resnet'
+config.MODEL_TGT.INIT_WEIGHTS = True
+config.MODEL_TGT.PRETRAINED = ''
+config.MODEL_TGT.NUM_JOINTS = 16
+config.MODEL_TGT.IMAGE_SIZE = [256, 256]  # width * height, ex: 192 * 256
+config.MODEL_TGT.EXTRA = MODEL_EXTRAS[config.MODEL_TGT.NAME]
+
+config.MODEL_TGT.STYLE = 'pytorch'
 
 config.LOSS = edict()
 config.LOSS.USE_TARGET_WEIGHT = True
@@ -225,11 +247,17 @@ def update_dir(model_dir, log_dir, data_dir):
 
     config.TEST.COCO_BBOX_FILE = os.path.join(
             config.DATA_DIR, config.TEST.COCO_BBOX_FILE)
-
+    """
     config.MODEL.PRETRAINED = os.path.join(
             config.DATA_DIR, config.MODEL.PRETRAINED)
+    """
+    # TODOSandalika
+    config.MODEL_TGT.PRETRAINED = os.path.join(
+            config.DATA_DIR, config.MODEL_TGT.PRETRAINED)
+    config.MODEL_SRC.PRETRAINED = os.path.join(
+            config.DATA_DIR, config.MODEL_SRC.PRETRAINED)
 
-
+"""
 def get_model_name(cfg):
     name = cfg.MODEL.NAME
     full_name = cfg.MODEL.NAME
@@ -248,6 +276,49 @@ def get_model_name(cfg):
             deconv_suffix=deconv_suffix)
     else:
         raise ValueError('Unkown model: {}'.format(cfg.MODEL))
+
+    return name, full_name
+"""
+# TODOSandalika
+def get_tgt_model_name(cfg):
+    name = cfg.MODEL_TGT.NAME
+    full_name = cfg.MODEL_TGT.NAME
+    extra = cfg.MODEL_TGT.EXTRA
+    if name in ['pose_resnet']:
+        name = '{model}_{num_layers}'.format(
+            model=name,
+            num_layers=extra.NUM_LAYERS)
+        deconv_suffix = ''.join(
+            'd{}'.format(num_filters)
+            for num_filters in extra.NUM_DECONV_FILTERS)
+        full_name = '{height}x{width}_{name}_{deconv_suffix}'.format(
+            height=cfg.MODEL_TGT.IMAGE_SIZE[1],
+            width=cfg.MODEL_TGT.IMAGE_SIZE[0],
+            name=name,
+            deconv_suffix=deconv_suffix)
+    else:
+        raise ValueError('Unkown model: {}'.format(cfg.MODEL_TGT))
+
+    return name, full_name
+
+def get_src_model_name(cfg):
+    name = cfg.MODEL_SRC.NAME
+    full_name = cfg.MODEL_SRC.NAME
+    extra = cfg.MODEL_SRC.EXTRA
+    if name in ['pose_resnet']:
+        name = '{model}_{num_layers}'.format(
+            model=name,
+            num_layers=extra.NUM_LAYERS)
+        deconv_suffix = ''.join(
+            'd{}'.format(num_filters)
+            for num_filters in extra.NUM_DECONV_FILTERS)
+        full_name = '{height}x{width}_{name}_{deconv_suffix}'.format(
+            height=cfg.MODEL_SRC.IMAGE_SIZE[1],
+            width=cfg.MODEL_SRC.IMAGE_SIZE[0],
+            name=name,
+            deconv_suffix=deconv_suffix)
+    else:
+        raise ValueError('Unkown model: {}'.format(cfg.MODEL_SRC))
 
     return name, full_name
 

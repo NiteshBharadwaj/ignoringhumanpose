@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 
 class JointsDataset(Dataset):
-    def __init__(self, cfg, root, image_set, is_train, transform=None):
+    def __init__(self, cfg, root, image_set, is_train, is_tgt, transform=None):
         self.num_joints = 0
         self.pixel_std = 200
         self.flip_pairs = []
@@ -35,6 +35,7 @@ class JointsDataset(Dataset):
         self.is_train = is_train
         self.root = root
         self.image_set = image_set
+        self.is_tgt = is_tgt
 
         self.output_path = cfg.OUTPUT_DIR
         self.data_format = cfg.DATASET.DATA_FORMAT
@@ -42,11 +43,17 @@ class JointsDataset(Dataset):
         self.scale_factor = cfg.DATASET.SCALE_FACTOR
         self.rotation_factor = cfg.DATASET.ROT_FACTOR
         self.flip = cfg.DATASET.FLIP
-
-        self.image_size = cfg.MODEL.IMAGE_SIZE
-        self.target_type = cfg.MODEL.EXTRA.TARGET_TYPE
-        self.heatmap_size = cfg.MODEL.EXTRA.HEATMAP_SIZE
-        self.sigma = cfg.MODEL.EXTRA.SIGMA
+        
+        if self.is_tgt:
+            self.image_size = cfg.MODEL_TGT.IMAGE_SIZE
+            self.target_type = cfg.MODEL_TGT.EXTRA.TARGET_TYPE
+            self.heatmap_size = cfg.MODEL_TGT.EXTRA.HEATMAP_SIZE
+            self.sigma = cfg.MODEL_TGT.EXTRA.SIGMA
+        else:
+            self.image_size = cfg.MODEL_SRC.IMAGE_SIZE
+            self.target_type = cfg.MODEL_SRC.EXTRA.TARGET_TYPE
+            self.heatmap_size = cfg.MODEL_SRC.EXTRA.HEATMAP_SIZE
+            self.sigma = cfg.MODEL_SRC.EXTRA.SIGMA
 
         self.transform = transform
         self.db = []
@@ -187,7 +194,7 @@ class JointsDataset(Dataset):
             tmp_size = self.sigma * 3
 
             for joint_id in range(self.num_joints):
-                feat_stride = self.image_size / self.heatmap_size
+                feat_stride = np.array(self.image_size) / np.array(self.heatmap_size) # TODOSandalika
                 mu_x = int(joints[joint_id][0] / feat_stride[0] + 0.5)
                 mu_y = int(joints[joint_id][1] / feat_stride[1] + 0.5)
                 # Check that any part of the gaussian is in-bounds

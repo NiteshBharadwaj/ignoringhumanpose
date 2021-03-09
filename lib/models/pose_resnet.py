@@ -143,9 +143,15 @@ class Bottleneck_CAFFE(nn.Module):
 
 class PoseResNet(nn.Module):
 
-    def __init__(self, block, layers, cfg, **kwargs):
+    def __init__(self, block, layers, cfg, is_tgt, **kwargs):
         self.inplanes = 64
-        extra = cfg.MODEL.EXTRA
+        if is_tgt:
+            extra = cfg.MODEL_TGT.EXTRA
+            out_channel_var = cfg.MODEL_TGT.NUM_JOINTS
+        else:
+            extra = cfg.MODEL_SRC.EXTRA
+            out_channel_var = cfg.MODEL_SRC.NUM_JOINTS
+
         self.deconv_with_bias = extra.DECONV_WITH_BIAS
 
         super(PoseResNet, self).__init__()
@@ -168,7 +174,7 @@ class PoseResNet(nn.Module):
 
         self.final_layer = nn.Conv2d(
             in_channels=extra.NUM_DECONV_FILTERS[-1],
-            out_channels=cfg.MODEL.NUM_JOINTS,
+            out_channels=out_channel_var,
             kernel_size=extra.FINAL_CONV_KERNEL,
             stride=1,
             padding=1 if extra.FINAL_CONV_KERNEL == 3 else 0
@@ -305,18 +311,25 @@ resnet_spec = {18: (BasicBlock, [2, 2, 2, 2]),
                152: (Bottleneck, [3, 8, 36, 3])}
 
 
-def get_pose_net(cfg, is_train, **kwargs):
-    num_layers = cfg.MODEL.EXTRA.NUM_LAYERS
-    style = cfg.MODEL.STYLE
+def get_pose_net(cfg, is_train, is_tgt, **kwargs):
+    if is_tgt:
+        num_layers = cfg.MODEL_TGT.EXTRA.NUM_LAYERS
+        style = cfg.MODEL_TGT.STYLE
+    else:
+        num_layers = cfg.MODEL_SRC.EXTRA.NUM_LAYERS
+        style = cfg.MODEL_SRC.STYLE
 
     block_class, layers = resnet_spec[num_layers]
 
     if style == 'caffe':
         block_class = Bottleneck_CAFFE
 
-    model = PoseResNet(block_class, layers, cfg, **kwargs)
+    model = PoseResNet(block_class, layers, cfg, is_tgt, **kwargs)
 
-    if is_train and cfg.MODEL.INIT_WEIGHTS:
-        model.init_weights(cfg.MODEL.PRETRAINED)
+    if is_train:
+        if is_tgt and cfg.MODEL_TGT.INIT_WEIGHTS:
+            model.init_weights(cfg.MODEL_TGT.PRETRAINED)
+        elif not is_tgt and cfg.MODEL_SRC.INIT_WEIGHTS:
+            model.init_weights(cfg.MODEL_SRC.PRETRAINED)
 
     return model

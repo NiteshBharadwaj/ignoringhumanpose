@@ -11,8 +11,12 @@ from __future__ import print_function
 import math
 
 import numpy as np
+import logging
 
 from utils.transforms import transform_preds
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_max_preds(batch_heatmaps):
@@ -25,8 +29,11 @@ def get_max_preds(batch_heatmaps):
     assert batch_heatmaps.ndim == 4, 'batch_images should be 4-ndim'
 
     batch_size = batch_heatmaps.shape[0]
+    # logger.info(f'batch_size {batch_size}')
     num_joints = batch_heatmaps.shape[1]
+    # logger.info(f'num_joints {num_joints}')
     width = batch_heatmaps.shape[3]
+    # logger.info(f'width {width}')
     heatmaps_reshaped = batch_heatmaps.reshape((batch_size, num_joints, -1))
     idx = np.argmax(heatmaps_reshaped, 2)
     maxvals = np.amax(heatmaps_reshaped, 2)

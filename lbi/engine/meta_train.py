@@ -97,11 +97,18 @@ def meta_train_ours2(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src, y_s
                 yhat_tgt = fmodel_tgt(x_tgt)
                 loss_tgt = criterion(yhat_tgt, y_tgt,w_tgt).mean()
                 norm_sum = 0
+                count_param = 0
+                # logger.info(f'length of param={len(list(fmodel_src.parameters()))}')
                 for sw, tw in zip(fmodel_src.parameters(),
                                   fmodel_tgt.parameters()):
-                    w_diff = tw - sw
-                    w_diff_norm = torch.norm(w_diff)
-                    norm_sum = norm_sum + w_diff_norm**2
+                    count_param += 1
+                    if count_param < len(list(fmodel_src.parameters())) - 1:
+                        # logger.info(f'count_param={count_param}')
+                        # logger.info(f'sw={sw.shape}')
+                        # logger.info(f'tw={tw.shape}')
+                        w_diff = tw - sw #TODOSandalika
+                        w_diff_norm = torch.norm(w_diff)
+                        norm_sum = norm_sum + w_diff_norm**2
                 norm_sum = norm_sum * args.lam
                 loss_tgt = loss_tgt + norm_sum
                 foptimizer_tgt.step(loss_tgt)

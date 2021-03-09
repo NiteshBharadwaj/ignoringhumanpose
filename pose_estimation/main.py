@@ -23,7 +23,7 @@ import _init_paths
 from core.config import config
 from core.config import update_config
 from core.config import update_dir
-from core.config import get_model_name
+from core.config import get_tgt_model_name, get_src_model_name # TODOSandalika # get_model_name
 from core.loss import JointsMSELossNoReduction, JointsMSELoss
 from core.function import train
 from core.function import validate
@@ -200,7 +200,7 @@ def main(args):
 
     this_dir = os.path.dirname(__file__)
     shutil.copy2(
-        os.path.join(this_dir, '../lib/models', config.MODEL.NAME + '.py'),
+        os.path.join(this_dir, '../lib/models', config.MODEL_SRC.NAME + '.py'), # TODOSandalika
         final_output_dir)
 
     writer_dict = {
@@ -217,10 +217,16 @@ def main(args):
     if not args.verbose:
         sys.stdout = open(f'{_save_dir}/log.txt', 'w')
     print('args: ', args)
-    dump_input = torch.rand((config.TRAIN.BATCH_SIZE,
+    # TODOSandalika
+    dump_input_tgt = torch.rand((config.TRAIN.BATCH_SIZE,
                              3,
-                             config.MODEL.IMAGE_SIZE[1],
-                             config.MODEL.IMAGE_SIZE[0]))
+                             config.MODEL_TGT.IMAGE_SIZE[1],
+                             config.MODEL_TGT.IMAGE_SIZE[0]))
+    dump_input_src = torch.rand((config.TRAIN.BATCH_SIZE,
+                             3,
+                             config.MODEL_SRC.IMAGE_SIZE[1],
+                             config.MODEL_SRC.IMAGE_SIZE[0]))
+    
     gpus = [int(i) for i in config.GPUS.split(',')]
     criterion = JointsMSELossNoReduction(
         use_target_weight=config.LOSS.USE_TARGET_WEIGHT, logger=logger
@@ -245,6 +251,7 @@ def main(args):
         config.DATASET_SRC.ROOT,
         config.DATASET_SRC.TRAIN_SET,
         True,
+        False,
         train_transform
     )
     train_target_dataset = eval('dataset.'+config.DATASET_TARGET.DATASET)(
@@ -252,9 +259,11 @@ def main(args):
         config.DATASET_TARGET.ROOT,
         config.DATASET_TARGET.TRAIN_SET,
         True,
+        True,
         train_transform
     )
-    train_dataset = train_target_dataset
+    train_dataset = train_target_dataset # TODOSandalika # train_source_dataset
+    
     if args.baseline4 or args.ours3 or args.ours4 or args.ours5 or args.baseline2 or args.ours1:
         train_target_source_dataset = torch.utils.data.ConcatDataset(
             [train_target_dataset, train_source_dataset])
@@ -264,6 +273,7 @@ def main(args):
         config.DATASET_TARGET.ROOT,
         config.DATASET_TARGET.VAL_SET,
         True,
+        True,
         test_transform
     )
     test_target_dataset = eval('dataset.'+config.DATASET_TARGET.DATASET)(
@@ -271,6 +281,7 @@ def main(args):
         config.DATASET_TARGET.ROOT,
         config.DATASET_TARGET.TEST_SET,
         False,
+        True,
         test_transform
     )
 
@@ -308,8 +319,8 @@ def main(args):
         gpus = [int(i) for i in config.GPUS.split(',')]
         logger.info("*****************************************************************************")
         print("Loading target")
-        model_tgt =  eval('models.'+config.MODEL.NAME+'.get_pose_net')(
-            config, is_train=True
+        model_tgt =  eval('models.'+config.MODEL_TGT.NAME+'.get_pose_net')(
+            config, is_train=True, is_tgt=True
         ).to(device)
         logger.info("*****************************************************************************")
         print("MOdel", model_tgt)
@@ -319,8 +330,8 @@ def main(args):
             optimizer_tgt, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
         )
 
-        model_src = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
-            config, is_train=True
+        model_src = eval('models.'+config.MODEL_SRC.NAME+'.get_pose_net')(
+            config, is_train=True, is_tgt=False
         ).to(device)
         #model_src = torch.nn.DataParallel(model_src, device_ids=gpus).cuda()
         optimizer_src = get_optimizer(config, model_src)
@@ -332,6 +343,7 @@ def main(args):
         train_valid_queue = iter(valid_loader)
         train_src_queue = iter(train_source_loader)
 
+        
         model_src.train()
         model_tgt.train()
         for i, (data_input_train, target_train, target_weight_train,
@@ -373,6 +385,23 @@ def main(args):
             optimizer_tgt_backup = optimizer_tgt.state_dict()
             model_src_backup = model_src.state_dict()
             optimizer_src_backup = optimizer_src.state_dict()
+            #idx_coco = torch.tensor([[16], [14], [12], [11], [13], [15], [0], [10], [8], [6], [5], [7], [9]]).to(device)
+            idx_coco = torch.tensor([16, 14, 12, 11, 13, 15, 0, 10, 8, 6, 5, 7, 9]).to(device)
+            # y_src = torch.index_select(y_src, 1, idx_coco)
+            # w_src = torch.index_select(w_src, 1, idx_coco)
+            idx_mpii = torch.tensor([0, 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14, 15]).to(device)
+            # y_tgt = torch.index_select(y_tgt, 1, idx_coco)
+            # w_tgt = torch.index_select(w_tgt, 1, idx_coco)
+            # y_tgt_val = torch.index_select(y_tgt_val, 1, idx_coco)
+            # w_tgt_val = torch.index_select(w_tgt_val, 1, idx_coco)
+            # logger.info('y_src shape', y_src_test.shape)
+            # TODOSandalika - change dimensions from keypoints to 13 common keypoints
+            # logger.info('x_tgt shape', x_tgt.shape) # batch, 3, img_size[0], img_size[1]
+            # logger.info('y_tgt shape', y_tgt.shape) # batch, keypoints, heatmap_size[0], heatmap_size[1]
+            # logger.info('w_tgt shape', w_tgt.shape) # batch, keypoints, 1
+            # logger.info('x_src shape', x_src.shape) # batch, 3, img_size[0], img_size[1]
+            # logger.info('y_src shape', y_src.shape) # batch, keypoints, heatmap_size[0], heatmap_size[1]
+            # logger.info('w_src shape', w_src.shape) # batch, keypoints, 1
             w = meta_train(args, model_tgt, model_src, x_tgt, y_tgt, w_tgt, x_src,
                            y_src, w_src, x_tgt_val, y_tgt_val, w_tgt_val, optimizer_tgt,
                            optimizer_src, device,criterion,logger)
@@ -418,11 +447,20 @@ def main(args):
                 final_loss = torch.mean(loss_tgt)
             norm_sum = 0
             if args.baseline3 or args.baseline4 or args.ours2 or args.ours3 or args.ours4 or args.ours5:
+                
+                count_param = 0
+                # logger.info(f'length of param={len(list(model_src.parameters()))}') # TODOSandalika
+                               
                 for sw, tw in zip(model_src.parameters(),
                                   model_tgt.parameters()):
-                    w_diff = tw - sw
-                    w_diff_norm = torch.norm(w_diff)
-                    norm_sum = norm_sum + w_diff_norm**2
+                    count_param += 1
+                    if count_param < len(list(model_src.parameters())) - 1:
+                        # logger.info(f'count_param={count_param}')
+                        # logger.info(f'sw={sw.shape}')
+                        # logger.info(f'tw={tw.shape}')
+                        w_diff = tw - sw #TODOSandalika
+                        w_diff_norm = torch.norm(w_diff)
+                        norm_sum = norm_sum + w_diff_norm**2
                 norm_sum = norm_sum * args.lam
                 final_loss += norm_sum
             optimizer_tgt.zero_grad()
@@ -431,6 +469,7 @@ def main(args):
             if args.wandb is not None:
                 wandb.log({"norm": norm_sum})
         logger.info(f'Finished epoch {epoch}')
+        
         logger.info('Starting validation...')
         val_tgt_acc, val_tgt_loss = validate(config, valid_loader, valid_loader.dataset, model_tgt,
                                   criterion_reduce, final_output_dir, tb_log_dir,

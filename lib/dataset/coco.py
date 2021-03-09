@@ -52,16 +52,20 @@ class COCODataset(JointsDataset):
         [16,14],[14,12],[17,15],[15,13],[12,13],[6,12],[7,13], [6,7],[6,8],
         [7,9],[8,10],[9,11],[2,3],[1,2],[1,3],[2,4],[3,5],[4,6],[5,7]]
     '''
-    def __init__(self, cfg, root, image_set, is_train, transform=None):
-        super().__init__(cfg, root, image_set, is_train, transform)
+    def __init__(self, cfg, root, image_set, is_train, is_tgt, transform=None):
+        super().__init__(cfg, root, image_set, is_train, is_tgt, transform)
         self.nms_thre = cfg.TEST.NMS_THRE
         self.image_thre = cfg.TEST.IMAGE_THRE
         self.oks_thre = cfg.TEST.OKS_THRE
         self.in_vis_thre = cfg.TEST.IN_VIS_THRE
         self.bbox_file = cfg.TEST.COCO_BBOX_FILE
         self.use_gt_bbox = cfg.TEST.USE_GT_BBOX
-        self.image_width = cfg.MODEL.IMAGE_SIZE[0]
-        self.image_height = cfg.MODEL.IMAGE_SIZE[1]
+        if is_tgt:
+            self.image_width = cfg.MODEL_TGT.IMAGE_SIZE[0]
+            self.image_height = cfg.MODEL_TGT.IMAGE_SIZE[1]
+        else:
+            self.image_width = cfg.MODEL_SRC.IMAGE_SIZE[0]
+            self.image_height = cfg.MODEL_SRC.IMAGE_SIZE[1]
         self.aspect_ratio = self.image_width * 1.0 / self.image_height
         self.pixel_std = 200
         self.coco = COCO(self._get_ann_file_keypoint())
