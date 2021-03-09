@@ -327,7 +327,7 @@ def main(args):
         scheduler_src = torch.optim.lr_scheduler.MultiStepLR(
             optimizer_src, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
         )
-
+    best_acc = -1
     for epoch in range(config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH):
         train_valid_queue = iter(valid_loader)
         train_src_queue = iter(train_source_loader)
@@ -457,7 +457,18 @@ def main(args):
                 "test_tgt_acc_per_epoch": test_tgt_acc,
                 "test_tgt_loss_per_epoch": test_tgt_loss
             })
-
+        checkpoint = {}
+        checkpoint["src"] = model_src.state_dict()
+        checkpoint["tgt"] = model_tgt.state_dict()
+        checkpoint["src_optim"] = optimizer_src.state_dict()
+        checkpoint["tgt_optim"] = optimizer_tgt.state_dict()
+        checkpoint["epoch"] = epoch
+        checkpoint["acc"] = test_tgt_acc
+        torch.save(checkpoint, f'{_save_dir}/last_epoch.pt')
+        if best_acc<test_tgt_acc:
+            best_acc = test_tgt_acc
+            torch.save(checkpoint, f'{_save_dir}/best_epoch.pt')
+        del checkpoint
     torch.save(model_tgt.state_dict(), f'{_save_dir}/final_model.pt')
     test_tgt_acc, test_tgt_loss = validate(config, test_loader, test_loader.dataset, model_tgt,
                                   criterion_reduce, final_output_dir, tb_log_dir,
