@@ -60,6 +60,9 @@ class JointsDataset(Dataset):
     def __len__(self,):
         return len(self.db)
 
+    def remap(self, kpts):
+        return torch.index_select(kpts, 0, self.remap_idxs)
+
     def __getitem__(self, idx):
         db_rec = copy.deepcopy(self.db[idx])
 
@@ -130,9 +133,10 @@ class JointsDataset(Dataset):
             'rotation': r,
             'score': score
         }
-
-        return input, target, target_weight, meta
-
+        target_remap = self.remap(target)
+        target_weight_remap = self.remap(target_weight)
+        return input, target_remap, target_weight_remap, meta
+    
     def select_data(self, db):
         db_selected = []
         for rec in db:

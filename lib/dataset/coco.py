@@ -14,6 +14,7 @@ import pickle
 from collections import defaultdict
 from collections import OrderedDict
 
+import torch
 import json_tricks as json
 import numpy as np
 from pycocotools.coco import COCO
@@ -94,7 +95,7 @@ class COCODataset(JointsDataset):
             self.db = self.select_data(self.db)
 
         logger.info('=> load {} samples'.format(len(self.db)))
-
+        self.remap_idxs = torch.tensor([16, 14, 12, 11, 13, 15, 0, 10, 8, 6, 5, 7, 9])
     def _get_ann_file_keypoint(self):
         """ self.root / annotations / person_keypoints_train2017.json """
         prefix = 'person_keypoints' \

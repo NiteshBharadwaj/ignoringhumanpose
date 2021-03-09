@@ -17,7 +17,7 @@ import numpy as np
 from scipy.io import loadmat, savemat
 
 from dataset.JointsDataset import JointsDataset
-
+import torch
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +36,7 @@ class MPIIDataset(JointsDataset):
             self.db = self.select_data(self.db)
 
         logger.info('=> load {} samples'.format(len(self.db)))
+        self.remap_idxs = torch.tensor([0, 1, 2, 3, 4, 5, 9, 10, 11, 12, 13, 14, 15])
 
     def _get_db(self):
         # create train/val split
