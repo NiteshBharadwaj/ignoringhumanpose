@@ -113,6 +113,10 @@ def argument_parser():
                         type=str,
                         metavar='PATH',
                         default=os.path.join('temp', 'data'))
+    parser.add_argument('--load_ckpt',
+                        type=str,
+                        metavar='PATH',
+                        default="")
     parser.add_argument('--lam', type=float, help='lambda', default=7e-3)
     parser.add_argument('--gamma', type=float, help='gamma', default=1)
     parser.add_argument('--patience',
@@ -302,7 +306,8 @@ def main(args):
         drop_last=True)
     print("*****************************************************************************")
     #print("MOdel", model_tgt)
-
+    last_epoch = -1
+    best_acc = -1
     if 1:#args.model == 'resnet':
         logger.info('Using resnet')
         gpus = [int(i) for i in config.GPUS.split(',')]
@@ -315,20 +320,30 @@ def main(args):
         print("MOdel", model_tgt)
         #model_tgt = torch.nn.DataParallel(model_tgt, device_ids=gpus).cuda()
         optimizer_tgt = get_optimizer(config, model_tgt)
-        scheduler_tgt = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer_tgt, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
-        )
 
         model_src = eval('models.'+config.MODEL.NAME+'.get_pose_net')(
             config, is_train=True
         ).to(device)
         #model_src = torch.nn.DataParallel(model_src, device_ids=gpus).cuda()
         optimizer_src = get_optimizer(config, model_src)
+        if args.load_ckpt!="":
+            ckpt = torch.load(args.load_ckpt)
+            model_src.load_state_dict(ckpt["src"])
+            model_tgt.load_state_dict(ckpt["tgt"])
+            optimizer_tgt.load_state_dict(ckpt["tgt_optim"])
+            optimizer_src.load_state_dict(ckpt["src_optim"])
+            last_epoch = ckpt["epoch"]
+            best_acc = ckpt["acc"]
         scheduler_src = torch.optim.lr_scheduler.MultiStepLR(
-            optimizer_src, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR
+            optimizer_src, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR, last_epoch=last_epoch
         )
-    best_acc = -1
-    for epoch in range(config.TRAIN.BEGIN_EPOCH, config.TRAIN.END_EPOCH):
+        scheduler_tgt = torch.optim.lr_scheduler.MultiStepLR(
+            optimizer_tgt, config.TRAIN.LR_STEP, config.TRAIN.LR_FACTOR, last_epoch=last_epoch
+        )
+    start_epoch = config.TRAIN.BEGIN_EPOCH
+    if last_epoch!=-1:
+        start_epoch = last_epoch
+    for epoch in range(start_epoch, config.TRAIN.END_EPOCH):
         train_valid_queue = iter(valid_loader)
         train_src_queue = iter(train_source_loader)
 
