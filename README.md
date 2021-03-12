@@ -1,4 +1,4 @@
-# Simple Baselines for Human Pose Estimation and Tracking
+# Learning By Ignoring for Human Pose Estimation
 
 We build upon [*Simple Baselines for Human Pose Estimation and Tracking*](https://arxiv.org/abs/1804.06208) and apply learning by ignoring framework
 
