@@ -12,6 +12,7 @@ import argparse
 import os
 import pprint
 import shutil
+import pickle as pkl
 
 import torch
 import torch.nn.parallel
@@ -166,8 +167,15 @@ def main():
     )
 
     if (config.NOISE_IND):
-        if not os.path.isfile(f"{config.EXP_PATH}/{config.NOISE_DPATH}"):
-            create_noise_data(config, train_loader)
+        print('########################## if noise ind ################################')
+
+        if not os.path.isfile(f"{config.EXP_PATH}/{config.NOISE_PATH}"):
+            print('########################## enters if/else to create file ################################')
+            with (open(f"{config.EXP_PATH}/{config.NOISE_PATH}", "rb")) as openfile:
+                data_noise = pkl.load(openfile)
+                print('################### noise data ########################', data_noise)
+            if not data_noise:
+                create_noise_data(config, train_loader)
 
     best_perf = 0.0
     best_model = False

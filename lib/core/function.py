@@ -33,7 +33,10 @@ def create_noise_data(config, train_loader):
         cnt += 1
 
     with open(f"{config.EXP_PATH}/{config.NOISE_PATH}", 'wb') as handle:
-        pkl.dump(train_loader.noise, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        print('######################## create noise data called ############################', train_loader.noise)
+        if train_loader.noise:
+            print('################## non empty noise ######################')
+            pkl.dump(train_loader.noise, handle, protocol=pkl.HIGHEST_PROTOCOL)
 
 
 def train(config, train_loader, model, criterion, optimizer, epoch,

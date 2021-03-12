@@ -125,11 +125,15 @@ class JointsDataset(Dataset):
                 joints[i, 0:2] = affine_transform(joints[i, 0:2], trans)
 
         if not self.noise:
-            self.noise[idx] = (np.random.random(self.num_joints),
+            self.noise[idx] = (np.random.randint(0, self.num_joints),
                                np.random.uniform(-1 * self.noise_size *
                                                  self.sigma, self.noise_size * self.sigma),
                                np.random.uniform(-1 * self.noise_size * self.sigma, self.noise_size * self.sigma))
-        target, target_weight = self.generate_target(joints, joints_vis, idx)
+            noise_idx = self.noise[idx]
+        else:
+            noise_idx = None
+        # print(self.noise)
+        target, target_weight = self.generate_target(joints, joints_vis, noise_idx)
 
         target = torch.from_numpy(target)
         target_weight = torch.from_numpy(target_weight)
@@ -181,7 +185,7 @@ class JointsDataset(Dataset):
         logger.info('=> num selected db: {}'.format(len(db_selected)))
         return db_selected
 
-    def generate_target(self, joints, joints_vis, idx):
+    def generate_target(self, joints, joints_vis, noise_idx=None):
         '''
         :param joints:  [num_joints, 3]
         :param joints_vis: [num_joints, 3]
@@ -205,12 +209,15 @@ class JointsDataset(Dataset):
                 feat_stride = self.image_size / self.heatmap_size
                 mu_x = int(joints[joint_id][0] / feat_stride[0] + 0.5)
                 mu_y = int(joints[joint_id][1] / feat_stride[1] + 0.5)
+                
+                # print('joint id', joint_id)
+                # print('noise 0 idx', self.noise[idx][0]) # has some 17 elements - each keypoint
 
                 if self.noise_ind:
-                    if self.noise:
-                        if joint_id == self.noise[idx][0]:
-                            mu_x += self.noise[idx][1]
-                            mu_y += self.noise[idx][2]
+                    if noise_idx is not None: #self.noise:
+                        if joint_id == noise_idx[0]:
+                            mu_x += noise_idx[1]
+                            mu_y += noise_idx[2]
 
                 # Check that any part of the gaussian is in-bounds
                 ul = [int(mu_x - tmp_size), int(mu_y - tmp_size)]
